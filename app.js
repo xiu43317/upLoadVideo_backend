@@ -6,13 +6,36 @@ const fs = require('fs');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 const cors = require('cors')
+const mongoose = require('mongoose');
+const Users = require('./models/Users')
 
+
+mongoose.connect('mongodb://localhost:27017/tutorials', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
+
+// Users.findOne({ 
+//   name: 'Rock',
+//   email: 'abc@gmail.com',
+//   password: '12345678'
+// })
+// .then((result)=>{
+//   console.log("result:",result)
+// }).catch((err)=>{
+//   console.log(err)
+// })
+
+const db = mongoose.connection;
+db.on('error', (err) => console.error('connection error', err)); // 連線異常
+db.once('open', (db) => console.log('Connected to MongoDB')); // 連線成功
 
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 
 var app = express();
 app.use(cors())
+app.use(express.json()); // Parses JSON request bodies
 
 
 // 動態設定儲存目錄與檔案命名
@@ -48,6 +71,46 @@ app.get('/video',(req,res)=>{
     if(item.split('.').pop()=='mp4') return item
   })
   res.send({success:true,filterFiles}).end()
+})
+
+// 查找全部資料
+app.get('/all',async(req,res)=>{
+  try{
+    const result = await Users.find({})
+    console.log(result)
+    res.send(result)
+  }catch(err){
+    console.log(err)
+  }
+})
+
+// 註冊資料
+app.post('/register',async(req,res)=>{
+  await Users.create({
+    name:req.body.username,
+    email:req.body.email,
+    password:req.body.password,
+    isManger:req.body.isManger
+  })
+  res.send("註冊成功")
+})
+
+// 驗證會員
+app.post('/login',async(req,res)=>{
+  console.log(req.body)
+  try{
+      const result = await Users.findOne({
+      email: req.body.username,
+      password: req.body.password
+   })
+   console.log(result)
+   res.send({
+    user:result,
+    message:"登入成功"
+   })
+  }catch(err){
+    console.log(err)
+  }
 })
 
 // view engine setup
