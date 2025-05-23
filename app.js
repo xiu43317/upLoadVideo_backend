@@ -8,6 +8,11 @@ var logger = require('morgan');
 const cors = require('cors')
 const mongoose = require('mongoose');
 const Users = require('./models/Users')
+const Videos = require('./models/Videos')
+const jwt = require('jsonwebtoken');
+const dotenv = require("dotenv")
+dotenv.config()
+const { JWT_SECRET } = process.env
 
 
 mongoose.connect('mongodb://localhost:27017/tutorials', {
@@ -34,7 +39,12 @@ var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 
 var app = express();
-app.use(cors())
+app.use(logger('dev'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(cors({credentials: true, origin: true}))
 app.use(express.json()); // Parses JSON request bodies
 
 
@@ -65,12 +75,22 @@ app.post('/upload', upload.single('file'), (req, res) => {
 });
 
 // 回傳影片檔名
-app.get('/video',(req,res)=>{
+app.get('/video',async(req,res)=>{
   let filenames = fs.readdirSync(path.join(__dirname,'public/uploads'));
   let filterFiles = filenames.filter((item)=>{
     if(item.split('.').pop()=='mp4') return item
   })
-  res.send({success:true,filterFiles}).end()
+  try{
+    const result = await Videos.find({})
+    console.log(result)
+    res.send({
+      success:true,
+      filterFiles,
+      videoInfo:result
+    }).end()
+  }catch(err){
+    console.log(err)
+  }
 })
 
 // 查找全部資料
@@ -82,6 +102,27 @@ app.get('/all',async(req,res)=>{
   }catch(err){
     console.log(err)
   }
+})
+
+// 新增影片資訊
+app.post('/video',async(req,res)=>{
+  await Videos.create({
+    name:req.body.name,
+    fileName:req.body.fileName
+  })
+  res.send("影片新增成功")
+})
+
+// 修改影片資訊
+app.put('/video',async(req,res)=>{
+  await Videos.findOneAndUpdate({
+    _id:req.body.id
+  },{
+    name:req.body.name
+  },{
+    new:true
+  })
+  res.send("修改完成")
 })
 
 // 註冊資料
@@ -104,24 +145,68 @@ app.post('/login',async(req,res)=>{
       password: req.body.password
    })
    console.log(result)
+   const data = {
+    name:result.name,
+    email:result.email,
+    isManger:result.isManger
+   }
+   const token = jwt.sign(data, JWT_SECRET);
+   console.log(token)
+   res.cookie('user', token)
    res.send({
     user:result,
-    message:"登入成功"
+    message:"登入成功",
    })
   }catch(err){
     console.log(err)
   }
 })
 
+// 確認cookie
+
+app.get('/check',async(req,res)=>{
+  const token = req.header('Authorization')
+  console.log(token)
+  if (token) {
+    console.log(token)
+    await jwt.verify(token, JWT_SECRET, (err, user) => {
+      if (err) {
+        console.log(err)
+        return res.sendStatus(403)
+      }
+        res.status(200).send({
+        status:"success",
+        data:user
+      })
+    });
+  } else {
+    res.sendStatus(401);
+  }
+})
+
+// 登出
+app.get('/logout',(req,res)=>{
+  const token = req.header('Authorization');
+  console.log(token)
+  if(token){
+    res.clearCookie('user')
+    res.status(200).send({
+      status:"success",
+      message:"已登出"
+    })
+  }else{
+    res.status(200).send({
+      status:"success",
+      message:"已登出"
+    })
+  }
+})
+
+
+
 // view engine setup
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
-
-app.use(logger('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
