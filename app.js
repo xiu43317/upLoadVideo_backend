@@ -11,6 +11,7 @@ const Users = require('./models/Users')
 const Videos = require('./models/Videos')
 const jwt = require('jsonwebtoken');
 const dotenv = require("dotenv")
+const ffmpegHelper = require('./ffmpeg-helper')
 dotenv.config()
 const { JWT_SECRET } = process.env
 
@@ -37,14 +38,15 @@ db.once('open', (db) => console.log('Connected to MongoDB')); // 連線成功
 
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
+const ffmpeg = require('ffmpeg');
 
 var app = express();
+app.use(cors({credentials: true, origin: 'http://localhost:5173'}))
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(cors({credentials: true, origin: true}))
 app.use(express.json()); // Parses JSON request bodies
 
 
@@ -66,23 +68,33 @@ const upload = multer({ storage });
 // 提供靜態檔案
 app.use(express.static(path.join(__dirname, 'public')));
 
+app.use('/streams',express.static(path.join(__dirname, 'hls_output')))
+
 // 接收檔案的路由
-app.post('/upload', upload.single('file'), (req, res) => {
+app.post('/upload', upload.single('file'), async(req, res) => {
   if (!req.file) {
     return res.status(400).send('未選擇檔案');
   }
-  res.send(`檔案已成功上傳到：'uploads'`);
+  const fileInfo = req.file
+  let split = fileInfo.filename.split('.')
+  split.pop()
+  let outputName = split.join('.')
+  
+  ffmpegHelper.convertToHls(`./public/uploads/${fileInfo.filename}`,outputName)
+  res.send(`檔案已成功上傳到：'uploads,`);
 });
 
 // 回傳影片檔名
 app.get('/video',async(req,res)=>{
   let filenames = fs.readdirSync(path.join(__dirname,'public/uploads'));
-  let filterFiles = filenames.filter((item)=>{
-    if(item.split('.').pop()=='mp4') return item
-  })
+  // let filterFiles = filenames.filter((item)=>{
+  //   if(item.split('.').pop()=='mp4') return item
+  // })
   try{
     const result = await Videos.find({})
     console.log(result)
+    let filterFiles = result.map(item=>Object.values(item)[2])
+    console.log(filenames)
     res.send({
       success:true,
       filterFiles,
@@ -152,7 +164,10 @@ app.post('/login',async(req,res)=>{
    }
    const token = jwt.sign(data, JWT_SECRET);
    console.log(token)
-   res.cookie('user', token)
+   res.cookie('user', token,{
+      httpOnly:true,
+      secure:false,
+   })
    res.send({
     user:result,
     message:"登入成功",
@@ -165,7 +180,7 @@ app.post('/login',async(req,res)=>{
 // 確認cookie
 
 app.get('/check',async(req,res)=>{
-  const token = req.header('Authorization')
+  const token = req.cookies.user
   console.log(token)
   if (token) {
     console.log(token)
@@ -186,7 +201,7 @@ app.get('/check',async(req,res)=>{
 
 // 登出
 app.get('/logout',(req,res)=>{
-  const token = req.header('Authorization');
+  const token = req.cookies.user
   console.log(token)
   if(token){
     res.clearCookie('user')

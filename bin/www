@@ -7,6 +7,8 @@
 var app = require('../app');
 var debug = require('debug')('backend:server');
 var http = require('http');
+const HLSServer = require('hls-server')
+
 
 /**
  * Get port from environment and store in Express.
@@ -20,6 +22,33 @@ app.set('port', port);
  */
 
 var server = http.createServer(app);
+
+// const hls = new HLSServer(server, {
+//   path: '/streams',
+//   dir: 'hls_output',
+//   onBeforeRequest: (req, res) => {
+//     const origin = req.headers.origin;
+
+//     // ✅ 檢查來源並允許
+//     if (origin === 'http://localhost:5173') {
+//       res.setHeader('Access-Control-Allow-Origin', origin);
+//     }
+
+//     res.setHeader('Access-Control-Allow-Credentials', 'true');
+//     res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+//     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+
+//     // ✅ 如果是預檢請求（OPTIONS），直接結束回應
+//     if (req.method === 'OPTIONS') {
+//       res.writeHead(204);
+//       res.end();
+//       return;
+//     }
+//     if (!req.url.startsWith('/streams/')) {
+//       return false; // ❗不要處理非 HLS 路徑，交給 Express
+//     }
+//   }
+// });
 
 /**
  * Listen on provided port, on all network interfaces.
