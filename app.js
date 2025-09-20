@@ -9,6 +9,7 @@ const cors = require('cors')
 const mongoose = require('mongoose');
 const Users = require('./models/Users')
 const Videos = require('./models/Videos')
+const Danmu = require('./models/Danmu')
 const jwt = require('jsonwebtoken');
 const dotenv = require("dotenv")
 const ffmpegHelper = require('./ffmpeg-helper')
@@ -214,6 +215,20 @@ app.get('/logout',(req,res)=>{
       status:"success",
       message:"已登出"
     })
+  }
+})
+
+//撈出歷史彈幕
+app.post('/findDanmus',async(req,res)=>{
+  console.log(req.body)
+  try{
+    const result = await Danmu.findOne({
+      videoId:req.body.videoId
+    })
+    console.log(result)
+    res.send(result)
+  }catch(err){
+    console.log(err)
   }
 })
 

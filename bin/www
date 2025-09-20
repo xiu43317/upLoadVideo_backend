@@ -8,6 +8,8 @@ var app = require('../app');
 var debug = require('debug')('backend:server');
 var http = require('http');
 const HLSServer = require('hls-server')
+const { Server } = require("socket.io");
+const Danmu = require("../models/Danmu")
 
 
 /**
@@ -22,6 +24,36 @@ app.set('port', port);
  */
 
 var server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+  },
+});
+// 把 io 傳給 app 使用
+app.set('io', io);
+
+const addDanmu = async(videoId, danmuData) => {
+  return await Danmu.findOneAndUpdate(
+    { videoId }, // 找到該影片
+    { $push: { danmus: danmuData } }, // 把新彈幕推進去
+    { new: true, upsert: true } // 回傳更新後的 document；如果沒影片就建立新的
+  );
+}
+
+io.on('connection', (socket) => {
+  console.log('a user connected', socket.id);
+  socket.on('newDanmu', (data) => {
+    addDanmu(data.id,{text:data.text,time:data.time})
+      .then((result)=>console.log(result))
+      .catch((err)=>console.log(err))
+    console.log('收到彈幕:', data);
+    io.emit('danmuBroadcast', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('user disconnected');
+  });
+});
 
 // const hls = new HLSServer(server, {
 //   path: '/streams',
