@@ -3,6 +3,7 @@ var express = require('express');
 var path = require('path');
 const multer = require('multer');
 const fs = require('fs');
+const { spawn } = require('child_process');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 const cors = require('cors')
@@ -10,6 +11,7 @@ const mongoose = require('mongoose');
 const Users = require('./models/Users')
 const Videos = require('./models/Videos')
 const Danmu = require('./models/Danmu')
+const Card = require('./models/Card')
 const jwt = require('jsonwebtoken');
 const dotenv = require("dotenv")
 const ffmpegHelper = require('./ffmpeg-helper')
@@ -70,6 +72,7 @@ const upload = multer({ storage });
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.use('/streams',express.static(path.join(__dirname, 'hls_output')))
+app.use('/subtitles',express.static(path.join(__dirname, 'public/subtitles')))
 
 // 接收檔案的路由
 app.post('/upload', upload.single('file'), async(req, res) => {
@@ -77,12 +80,87 @@ app.post('/upload', upload.single('file'), async(req, res) => {
     return res.status(400).send('未選擇檔案');
   }
   const fileInfo = req.file
+  const videoPath = path.join(__dirname, `public/uploads/${fileInfo.filename}`);
+  const subtitleDir = path.join(__dirname, 'public/subtitles');
   let split = fileInfo.filename.split('.')
   split.pop()
   let outputName = split.join('.')
   
-  ffmpegHelper.convertToHls(`./public/uploads/${fileInfo.filename}`,outputName)
-  res.send(`檔案已成功上傳到：'uploads,`);
+  // HLS 輸出目錄
+  const hlsPromise = new Promise((resolve, reject) => {
+    try {
+      ffmpegHelper.convertToHls(`./public/uploads/${fileInfo.filename}`,outputName)
+      resolve(`HLS 轉檔完成：${outputName}`);
+    } catch (err) {
+      reject(`HLS 轉檔失敗: ${err}`);
+    }
+  });
+  // 字幕輸出
+  const subtitlePromise = new Promise((resolve, reject) => {
+    const python = spawn('python', [
+      path.join(__dirname, 'scripts/transcribe.py'),
+      videoPath
+    ]);
+
+    python.stdout.on('data', (data) => {
+      console.log(`🎧 Python: ${data}`);
+    });
+
+    python.stderr.on('data', (data) => {
+      console.error(`❌ Python 錯誤: ${data}`);
+    });
+
+    python.on('close', (code) => {
+      if (code === 0) {
+        resolve(`字幕產生完成：${outputName}.srt`);
+      } else {
+        reject(`字幕產生失敗，代碼：${code}`);
+      }
+    });
+  });
+    // 同步執行
+  Promise.all([hlsPromise, subtitlePromise])
+    .then((results) => {
+      console.log(results);
+      res.send({
+        success: true,
+        message: '影片與字幕處理完成 ✅',
+        details: results,
+        video: `/uploads/${fileInfo.filename}`,
+        subtitle: `/subtitles/${outputName}.srt`
+      });
+    })
+    .catch((err) => {
+      console.error(err);
+      res.status(500).send({
+        success: false,
+        message: '影片處理失敗 ❌',
+        error: err
+      });
+    });
+  // ffmpegHelper.convertToHls(`./public/uploads/${fileInfo.filename}`,outputName)
+  // res.send(`檔案已成功上傳到：'uploads,`);
+  // 呼叫 Python 產生字幕
+  // console.log('📝 開始產生字幕...');
+  // const py = spawn('python', [
+  //   path.join(__dirname, 'scripts/transcribe.py'),
+  //   videoPath,
+  //   subtitleDir
+  // ]);
+  // let pyOutput = '';
+  // py.stdout.on('data', (data) => {
+  //   pyOutput += data.toString();
+  // });
+  // py.on('close', (code) => {
+  //   console.log(`Python process exited with code ${code}`);
+  //   console.log('字幕檔產生路徑：', pyOutput.trim());
+
+  //   res.send({
+  //     message: '影片已上傳並產生字幕',
+  //     video: `/uploads/${fileInfo.filename}`,
+  //     subtitle: `/subtitles/${outputName}.srt`
+  //   });
+  // });
 });
 
 // 回傳影片檔名
@@ -226,6 +304,35 @@ app.post('/findDanmus',async(req,res)=>{
       videoId:req.body.videoId
     })
     console.log(result)
+    res.send(result)
+  }catch(err){
+    console.log(err)
+  }
+})
+
+// 撈出歷史卡片
+app.post('/findCards',async(req,res)=>{
+  console.log(req.body)
+  try{
+    const result = await Card.findOne({
+      videoId:req.body.videoId
+    })
+    console.log(result)
+    res.send(result)
+  }catch(err){
+    console.log(err)
+  }
+})
+
+// 儲存卡片資料
+app.post('/addCard',async(req,res)=>{
+  console.log(req.body)
+  try{
+    const result = await Card.findOneAndUpdate(
+      { videoId:req.body.videoId }, // 找到該影片
+      { $push: { cards: req.body.cardData } }, // 把新卡片推進去
+      { new: true, upsert: true } // 回傳更新後的 document；如果沒影片就建立新的
+    );
     res.send(result)
   }catch(err){
     console.log(err)
